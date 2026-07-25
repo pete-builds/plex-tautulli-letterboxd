@@ -2,21 +2,12 @@
 
 Export Plex or Tautulli watch history to a CSV that Letterboxd imports.
 
-## Why there is no scrobbling
+- Reads Tautulli or Plex
+- Exact `tmdbID`/`imdbID` matching, `Rewatch` flags, timezone-correct dates
+- `since` filter so repeat imports stay small
+- Self-hosted for one user, or multi-tenant with Plex sign-in
 
-Letterboxd has no open write API. Access is a request-only closed beta
-([api-beta](https://letterboxd.com/api-beta/)): you email them, and if approved
-you sign requests with an `api_key` and `api_secret`. There is no public signup,
-so no tool can create diary entries on your behalf. Be suspicious of any that
-claims to.
-
-Driving a headless browser is the only way around it, and this project won't.
-Automating the import means auto-confirming Letterboxd's match screen, which for
-title-matched films is the only thing between a wrong guess and a wrong diary
-entry. It also needs your Letterboxd password stored somewhere. Twenty seconds
-of clicking is the better trade.
-
-### Prior art
+## Prior art
 
 [`plex2letterboxd`](https://github.com/mtimkovich/plex2letterboxd) reads Plex and
 writes a Letterboxd CSV with title, year, IMDb id, rating and watched date. It is
@@ -71,9 +62,17 @@ Columns: `tmdbID`, `imdbID`, `Title`, `Year`, `WatchedDate`, `Rewatch`, plus
 - Plays under `COMPLETION_THRESHOLD` skipped (Tautulli only).
 - Exports over 1MB split into parts, each with its own header.
 
+## Why the import is manual
+
+Letterboxd has no open write API. Access is a request-only closed beta
+([api-beta](https://letterboxd.com/api-beta/)), so nothing can create diary
+entries for you. Browser automation is the only way around that, and it means
+auto-confirming the match screen and storing your Letterboxd password. Not worth
+it to save twenty seconds of clicking.
+
 ## Limitations
 
-- **Manual import.** Preview, download, upload, confirm. Not automatic.
+- **Manual import.** Preview, download, upload, confirm.
 - **Deleted films lose their ids.** Tautulli keeps the play after you remove the
   file, but metadata no longer resolves, so those rows fall back to fuzzy title
   matching. On the author's library that was 37 of 65 rows.
