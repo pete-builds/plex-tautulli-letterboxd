@@ -19,7 +19,7 @@ from collections.abc import Iterable, Sequence
 
 from boxd_bridge.models import DiaryRow
 
-CSV_COLUMNS: Sequence[str] = (
+BASE_COLUMNS: Sequence[str] = (
     "tmdbID",
     "imdbID",
     "Title",
@@ -27,6 +27,19 @@ CSV_COLUMNS: Sequence[str] = (
     "WatchedDate",
     "Rewatch",
 )
+RATING_COLUMN = "Rating10"
+
+# Back-compat alias: the columns emitted when ratings are off, which is default.
+CSV_COLUMNS: Sequence[str] = BASE_COLUMNS
+
+
+def columns_for(include_ratings: bool = False) -> tuple[str, ...]:
+    """Rating10 is *absent*, not blank, when ratings are disabled.
+
+    An always-present empty column would suggest the data exists and happens to
+    be missing. Omitting it says plainly that this export does not carry ratings.
+    """
+    return (*BASE_COLUMNS, RATING_COLUMN) if include_ratings else tuple(BASE_COLUMNS)
 
 _LINE_TERMINATOR = "\n"
 
@@ -49,12 +62,12 @@ def _render_line(values: Sequence[object]) -> str:
     return buffer.getvalue()
 
 
-def render_header() -> str:
-    return _render_line(CSV_COLUMNS)
+def render_header(include_ratings: bool = False) -> str:
+    return _render_line(columns_for(include_ratings))
 
 
-def row_values(row: DiaryRow) -> list[str]:
-    return [
+def row_values(row: DiaryRow, include_ratings: bool = False) -> list[str]:
+    values = [
         row.tmdb_id or "",
         row.imdb_id or "",
         row.title,
@@ -62,14 +75,21 @@ def row_values(row: DiaryRow) -> list[str]:
         row.watched_date,
         "true" if row.rewatch else "false",
     ]
+    if include_ratings:
+        # An unrated film gets an empty cell. A literal 0 would import as a
+        # real rating of zero.
+        values.append(str(row.rating10) if row.rating10 is not None else "")
+    return values
 
 
-def render_row(row: DiaryRow) -> str:
-    return _render_line(row_values(row))
+def render_row(row: DiaryRow, include_ratings: bool = False) -> str:
+    return _render_line(row_values(row, include_ratings))
 
 
 def render_csv_parts(
-    rows: Iterable[DiaryRow], max_bytes: int = 900_000
+    rows: Iterable[DiaryRow],
+    max_bytes: int = 900_000,
+    include_ratings: bool = False,
 ) -> list[str]:
     """Render rows into one or more complete CSV documents.
 
@@ -78,7 +98,7 @@ def render_csv_parts(
     larger than the budget still gets its own part rather than being dropped or
     looping forever.
     """
-    header = render_header()
+    header = render_header(include_ratings)
     header_bytes = len(header.encode("utf-8"))
     if max_bytes <= header_bytes:
         raise ValueError(
@@ -91,7 +111,7 @@ def render_csv_parts(
     has_row = False
 
     for row in rows:
-        line = render_row(row)
+        line = render_row(row, include_ratings)
         line_bytes = len(line.encode("utf-8"))
         if has_row and current_bytes + line_bytes > max_bytes:
             parts.append("".join(current))

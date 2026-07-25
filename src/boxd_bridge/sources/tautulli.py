@@ -43,6 +43,7 @@ import httpx
 from boxd_bridge.guids import ExternalIds, parse_guid_strings
 from boxd_bridge.models import WatchEvent
 from boxd_bridge.sources.base import SourceError
+from boxd_bridge.transform.ratings import DISABLED, RatingPolicy, normalize_rating10
 
 _PAGE_SIZE = 500
 _MAX_PAGES = 200  # 100k plays; a guard against a misreported total looping forever
@@ -57,12 +58,15 @@ class TautulliSource:
         client: httpx.AsyncClient,
         *,
         completion_threshold: int = 85,
+        rating_policy: RatingPolicy = DISABLED,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._client = client
         self._completion_threshold = completion_threshold
-        self._metadata_cache: dict[str, ExternalIds] = {}
+        self._rating_policy = rating_policy
+        # rating_key -> (external ids, the token owner's rating)
+        self._metadata_cache: dict[str, tuple[ExternalIds, int | None]] = {}
 
     async def _call(self, cmd: str, **params: Any) -> Any:
         query = {"apikey": self._api_key, "cmd": cmd, **params}
@@ -86,18 +90,34 @@ class TautulliSource:
             )
         return envelope.get("data")
 
-    async def _external_ids(self, rating_key: str) -> ExternalIds:
+    async def _metadata(self, rating_key: str) -> tuple[ExternalIds, int | None]:
         if rating_key in self._metadata_cache:
             return self._metadata_cache[rating_key]
         try:
             data = await self._call("get_metadata", rating_key=rating_key)
         except SourceError:
-            ids = ExternalIds(None, None)
+            result = (ExternalIds(None, None), None)
         else:
-            guids = data.get("guids") if isinstance(data, dict) else None
+            data = data if isinstance(data, dict) else {}
+            guids = data.get("guids")
             ids = parse_guid_strings(guids if isinstance(guids, list) else None)
-        self._metadata_cache[rating_key] = ids
-        return ids
+            # `user_rating` is the personal star rating. `rating` and
+            # `audience_rating` are critic/aggregate scores and must never be
+            # exported as somebody's own rating.
+            result = (ids, normalize_rating10(data.get("user_rating")))
+        self._metadata_cache[rating_key] = result
+        return result
+
+    async def _rating_owner_id(self) -> str | None:
+        """The Tautulli admin, which is the account whose token reads ratings."""
+        try:
+            data = await self._call("get_users")
+        except SourceError:
+            return None
+        for user in data if isinstance(data, list) else []:
+            if isinstance(user, dict) and user.get("is_admin"):
+                return str(user.get("user_id"))
+        return None
 
     def _is_complete(self, row: dict[str, Any]) -> bool:
         percent = row.get("percent_complete")
@@ -163,9 +183,15 @@ class TautulliSource:
 
         async def warm(rating_key: str) -> None:
             async with semaphore:
-                await self._external_ids(rating_key)
+                await self._metadata(rating_key)
 
         await asyncio.gather(*(warm(rk) for rk in rating_keys))
+
+        # Ratings read through this API key always belong to the admin, so they
+        # may only be attached to the admin's own plays.
+        policy = self._rating_policy
+        if policy.enabled and policy.owner_user_id is None:
+            policy = RatingPolicy(True, await self._rating_owner_id())
 
         events: list[WatchEvent] = []
         for row in candidates:
@@ -173,9 +199,10 @@ class TautulliSource:
             title = row.get("title") or row.get("full_title")
             if watched_at is None or not title:
                 continue
-            ids = self._metadata_cache.get(
-                str(row.get("rating_key")), ExternalIds(None, None)
+            ids, rating10 = self._metadata_cache.get(
+                str(row.get("rating_key")), (ExternalIds(None, None), None)
             )
+            user_id = str(row["user_id"]) if row.get("user_id") else None
             year = row.get("year")
             events.append(
                 WatchEvent(
@@ -184,8 +211,9 @@ class TautulliSource:
                     year=int(year) if str(year or "").isdigit() else None,
                     tmdb_id=ids.tmdb_id,
                     imdb_id=ids.imdb_id,
-                    user_id=str(row["user_id"]) if row.get("user_id") else None,
+                    user_id=user_id,
                     user_name=row.get("friendly_name") or row.get("user"),
+                    rating10=rating10 if policy.applies_to(user_id) else None,
                 )
             )
         return events

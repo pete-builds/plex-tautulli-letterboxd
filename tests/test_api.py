@@ -175,7 +175,8 @@ def test_index_exposes_the_range_control(env_client):
 
 def test_users_endpoint_lists_tautulli_users(env_client):
     users = env_client.get("/api/users").json()["users"]
-    assert [u["friendly_name"] for u in users] == ["moviefan"]
+    # "Local" (id 0) and inactive accounts are excluded; the admin is not.
+    assert [u["friendly_name"] for u in users] == ["owner", "moviefan"]
 
 
 def test_hosted_mode_requires_a_session():

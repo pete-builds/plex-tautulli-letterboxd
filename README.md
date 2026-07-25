@@ -95,10 +95,53 @@ bookmark.
 - **Correct dates.** Converts to your timezone *before* truncating to a calendar
   date, so a film finished at 11pm does not land on tomorrow.
 - **Completion threshold.** Skips abandoned plays (Tautulli source only).
+- **Star ratings, off by default.** Opt in with `EXPORT_RATINGS=true`. Read the
+  attribution caveat below first: it is the reason this is not on by default.
 - **1MB splitting.** Letterboxd caps uploads at 1MB; larger exports split into
   parts, each with its own header row.
 
-Exported columns: `tmdbID`, `imdbID`, `Title`, `Year`, `WatchedDate`, `Rewatch`.
+Exported columns: `tmdbID`, `imdbID`, `Title`, `Year`, `WatchedDate`, `Rewatch`,
+plus `Rating10` when ratings are enabled. When they are not, that column is
+absent from the file entirely rather than present and blank.
+
+## Ratings, and why they are off by default
+
+Plex stores a personal star rating per account, and Letterboxd's importer accepts
+one. The obvious move is to export it. There is a trap.
+
+**Neither source can return a *specific* user's rating.** Verified against a live
+Tautulli and a live Plex Media Server:
+
+- Tautulli's `get_metadata` ignores `user_id`. The same call returns the same
+  `user_rating` with no user, with `user_id=0`, and with an unrelated user id.
+- Plex's `/library/metadata/<key>` ignores `accountID`. `userRating` is identical
+  for `accountID=1` and `accountID=2`.
+
+Both return the rating belonging to whoever owns the **token**. On a shared
+server that is the admin, not the person whose history is being exported. So the
+naive implementation writes the server owner's rating into their friends'
+diaries. A missing rating is an empty cell; a wrong rating is a false statement
+in someone's public record, and they would have no reason to suspect it.
+
+So ratings are gated two ways:
+
+1. `EXPORT_RATINGS` defaults to `false`, and the column is omitted entirely.
+2. Even when enabled, a rating is attached **only to rows belonging to the
+   account that owns the token**:
+   - `plex-oauth` mode: every visitor authenticates as themselves, so the token
+     is theirs and all of their rows can carry ratings.
+   - `env` mode with Tautulli: only the Tautulli admin's own plays are rated.
+     Other users' rows get an empty cell.
+   - `env` mode with Plex directly: only the server owner's rows (Plex
+     `accountID` 1) are rated.
+
+Enabling `EXPORT_RATINGS` is therefore safe, but on a shared server it will only
+populate ratings for your own watches. That is the honest ceiling, not a bug.
+
+Ratings use `Rating10` (integers 1 to 10) because Plex already stores 0 to 10,
+which makes the mapping exact rather than a lossy conversion to Letterboxd's
+half-star `Rating` column. A rating of 0 means unrated in Plex and produces an
+empty cell, never a literal `0`, which would import as a real rating of zero.
 
 ## Honest limitations
 
@@ -120,8 +163,11 @@ configurable via `COMPLETION_THRESHOLD`. Abandoning a film 20 minutes in does no
 create a diary entry. This only applies to the Tautulli source: Plex's history
 records that something was viewed without a completion percentage.
 
-**Ratings and reviews are not exported.** Neither source's history API exposes
-per-user ratings, so those columns are left out rather than guessed at.
+**Ratings need opting in, and only cover your own watches.** See the ratings
+section above. On a shared server, other users' rows will have an empty rating
+cell no matter what, because the API cannot tell us what they rated.
+
+**Reviews and tags are not exported.** Neither source stores them.
 
 ## Why this is probably as good as it gets
 
@@ -204,6 +250,7 @@ flag. Set `COOKIE_SECURE=false` only for local HTTP testing.
 | `PLEX_TOKEN` | | Plex auth token |
 | `DISPLAY_TIMEZONE` | `UTC` | IANA name, e.g. `America/New_York` |
 | `COMPLETION_THRESHOLD` | `85` | Percent watched. Tautulli source only |
+| `EXPORT_RATINGS` | `false` | Adds the `Rating10` column. Only populates rows owned by the token holder; see above |
 | `CSV_CHUNK_BYTES` | `900000` | Split threshold, under Letterboxd's 1MB cap |
 | `SESSION_SECRET` | | Required for `plex-oauth`, 32+ chars |
 | `SESSION_TTL_SECONDS` | `1800` | Session cookie lifetime |
@@ -243,7 +290,8 @@ Query parameters on `/api/preview` and `/api/export.csv`:
 | `part` | Which part of a split export to download, starting at 1 |
 
 `/api/export.csv` sets `X-Boxd-Rows`, `X-Boxd-Total-Rows`, `X-Boxd-Parts`,
-`X-Boxd-Next-Since`, and `X-Boxd-Since` when a window is active.
+`X-Boxd-Next-Since`, `X-Boxd-Ratings` (`on`/`off`), and `X-Boxd-Since` when a
+window is active.
 
 ## Development
 

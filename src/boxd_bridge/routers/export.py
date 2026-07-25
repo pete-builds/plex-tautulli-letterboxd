@@ -67,6 +67,7 @@ async def _run_export(
             user_id=effective_user,
             max_bytes=settings.csv_chunk_bytes,
             since=since,
+            include_ratings=settings.export_ratings,
         )
     except SourceError as exc:
         raise HTTPException(
@@ -116,6 +117,8 @@ async def preview(
         "parts": result.part_count,
         "rewatches": result.rewatch_count,
         "exact_id_matches": result.matched_count,
+        "ratings_enabled": result.include_ratings,
+        "rated": result.rated_count,
         "timezone": settings.display_timezone,
         "sample": [
             {
@@ -157,6 +160,7 @@ async def export_csv(
         # The cutoff to use next time. We persist nothing, so this is how the
         # client learns where to resume.
         "X-Boxd-Next-Since": _today(settings),
+        "X-Boxd-Ratings": "on" if result.include_ratings else "off",
     }
     if since_date:
         headers["X-Boxd-Since"] = since_date.isoformat()

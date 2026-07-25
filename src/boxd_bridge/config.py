@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     completion_threshold: int = Field(default=85, ge=0, le=100)
     csv_chunk_bytes: int = Field(default=900_000, ge=1_024, le=1_000_000)
 
+    # Off by default. Neither source can return a *specific* user's star rating:
+    # both hand back whichever account owns the token. Exporting that into
+    # someone else's diary would be a false statement, so opting in is explicit
+    # and rows that cannot be attributed stay empty regardless.
+    export_ratings: bool = False
+
     # --- Hosted mode (plex-oauth) ---
     session_secret: str | None = None
     session_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)

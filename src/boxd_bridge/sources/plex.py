@@ -36,6 +36,7 @@ import httpx
 from boxd_bridge.guids import ExternalIds, parse_plex_guid_objects
 from boxd_bridge.models import WatchEvent
 from boxd_bridge.sources.base import SourceError
+from boxd_bridge.transform.ratings import DISABLED, RatingPolicy, normalize_rating10
 
 _PAGE_SIZE = 500
 _MAX_PAGES = 200
@@ -50,12 +51,15 @@ class PlexSource:
         client: httpx.AsyncClient,
         *,
         account_id: str | None = None,
+        rating_policy: RatingPolicy = DISABLED,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._client = client
         self._account_id = account_id
-        self._metadata_cache: dict[str, tuple[ExternalIds, int | None]] = {}
+        self._rating_policy = rating_policy
+        # ratingKey -> (external ids, year, the token owner's rating)
+        self._metadata_cache: dict[str, tuple[ExternalIds, int | None, int | None]] = {}
 
     def _headers(self) -> dict[str, str]:
         return {"Accept": "application/json", "X-Plex-Token": self._token}
@@ -79,7 +83,9 @@ class PlexSource:
             raise SourceError("Plex response had no MediaContainer")
         return container
 
-    async def _metadata(self, rating_key: str) -> tuple[ExternalIds, int | None]:
+    async def _metadata(
+        self, rating_key: str
+    ) -> tuple[ExternalIds, int | None, int | None]:
         if rating_key in self._metadata_cache:
             return self._metadata_cache[rating_key]
         try:
@@ -88,9 +94,15 @@ class PlexSource:
             item = items[0] if items else {}
             ids = parse_plex_guid_objects(item.get("Guid"))
             year = item.get("year")
-            result = (ids, int(year) if isinstance(year, int) else None)
+            # `userRating` is the personal 0-10 star rating. `rating` and
+            # `audienceRating` are critic/aggregate scores; never export those.
+            result = (
+                ids,
+                int(year) if isinstance(year, int) else None,
+                normalize_rating10(item.get("userRating")),
+            )
         except (SourceError, IndexError, TypeError, ValueError):
-            result = (ExternalIds(None, None), None)
+            result = (ExternalIds(None, None), None, None)
         self._metadata_cache[rating_key] = result
         return result
 
@@ -139,9 +151,10 @@ class PlexSource:
             title = row.get("title")
             if not isinstance(viewed_at, (int, float)) or viewed_at <= 0 or not title:
                 continue
-            ids, meta_year = self._metadata_cache.get(
-                str(row.get("ratingKey")), (ExternalIds(None, None), None)
+            ids, meta_year, rating10 = self._metadata_cache.get(
+                str(row.get("ratingKey")), (ExternalIds(None, None), None, None)
             )
+            user_id = str(row["accountID"]) if row.get("accountID") else None
             year = row.get("year")
             events.append(
                 WatchEvent(
@@ -150,7 +163,10 @@ class PlexSource:
                     year=year if isinstance(year, int) else meta_year,
                     tmdb_id=ids.tmdb_id,
                     imdb_id=ids.imdb_id,
-                    user_id=str(row["accountID"]) if row.get("accountID") else None,
+                    user_id=user_id,
+                    rating10=(
+                        rating10 if self._rating_policy.applies_to(user_id) else None
+                    ),
                 )
             )
         return events

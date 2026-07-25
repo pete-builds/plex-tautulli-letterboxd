@@ -29,6 +29,7 @@ class ExportResult:
     rows: list[DiaryRow]
     total_rows: int = 0
     since: date | None = None
+    include_ratings: bool = False
 
     @property
     def row_count(self) -> int:
@@ -47,6 +48,10 @@ class ExportResult:
         return sum(1 for row in self.rows if row.rewatch)
 
     @property
+    def rated_count(self) -> int:
+        return sum(1 for row in self.rows if row.rating10 is not None)
+
+    @property
     def matched_count(self) -> int:
         """Rows carrying an exact id, which import without fuzzy title matching."""
         return sum(1 for row in self.rows if row.tmdb_id or row.imdb_id)
@@ -59,6 +64,7 @@ async def build_export(
     user_id: str | None = None,
     max_bytes: int = 900_000,
     since: date | None = None,
+    include_ratings: bool = False,
 ) -> ExportResult:
     events = await source.fetch_movie_history(user_id=user_id)
 
@@ -68,7 +74,13 @@ async def build_export(
     all_rows = build_diary_rows(events, tz)
     rows = filter_since(all_rows, since)
 
-    parts = render_csv_parts(rows, max_bytes=max_bytes)
+    parts = render_csv_parts(
+        rows, max_bytes=max_bytes, include_ratings=include_ratings
+    )
     return ExportResult(
-        parts=parts, rows=rows, total_rows=len(all_rows), since=since
+        parts=parts,
+        rows=rows,
+        total_rows=len(all_rows),
+        since=since,
+        include_ratings=include_ratings,
     )

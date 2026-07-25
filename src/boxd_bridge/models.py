@@ -22,6 +22,8 @@ class WatchEvent:
     imdb_id: str | None = None
     user_id: str | None = None
     user_name: str | None = None
+    # 1-10, or None when unrated or not attributable to this event's user.
+    rating10: int | None = None
 
     def __post_init__(self) -> None:
         if self.watched_at_utc.tzinfo is None:
@@ -38,6 +40,7 @@ class DiaryRow:
     tmdb_id: str | None = None
     imdb_id: str | None = None
     rewatch: bool = False
+    rating10: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

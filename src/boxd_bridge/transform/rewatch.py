@@ -78,6 +78,7 @@ def build_diary_rows(
                     tmdb_id=event.tmdb_id,
                     imdb_id=event.imdb_id,
                     rewatch=index > 0,
+                    rating10=event.rating10,
                 )
             )
 

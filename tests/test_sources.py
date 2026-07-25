@@ -19,6 +19,7 @@ import pytest
 from boxd_bridge.sources.base import SourceError
 from boxd_bridge.sources.plex import PlexSource
 from boxd_bridge.sources.tautulli import TautulliSource
+from boxd_bridge.transform.ratings import RatingPolicy
 
 
 def tautulli_history_row(**overrides):
@@ -48,7 +49,7 @@ def tautulli_history_row(**overrides):
     return row
 
 
-def tautulli_app(history_rows, *, metadata_guids=None, fail=False):
+def tautulli_app(history_rows, *, metadata_guids=None, fail=False, user_rating=None):
     if metadata_guids is None:
         metadata_guids = ["imdb://tt1234567", "tmdb://12345"]
 
@@ -83,7 +84,16 @@ def tautulli_app(history_rows, *, metadata_guids=None, fail=False):
                 json={
                     "response": {
                         "result": "success",
-                        "data": {"guids": metadata_guids, "title": "Example Film", "year": "2026"},
+                        "data": {
+                            "guids": metadata_guids,
+                            "title": "Example Film",
+                            "year": "2026",
+                            # user_rating is the personal star rating; the other
+                            # two are critic/aggregate scores.
+                            "user_rating": user_rating,
+                            "rating": "8.6",
+                            "audience_rating": "7.6",
+                        },
                     }
                 },
             )
@@ -95,6 +105,7 @@ def tautulli_app(history_rows, *, metadata_guids=None, fail=False):
                         "result": "success",
                         "data": [
                             {"user_id": 0, "username": "Local", "is_active": 1},
+                            {"user_id": 120000, "username": "owner", "friendly_name": "owner", "is_active": 1, "is_admin": 1},
                             {"user_id": 424242, "username": "moviefan", "friendly_name": "moviefan", "is_active": 1},
                             {"user_id": 5550726, "username": "Guests", "is_active": 0},
                         ],
@@ -203,7 +214,7 @@ async def test_tautulli_list_users_excludes_inactive_and_local():
     source, client = tautulli_source([])
     async with client:
         users = await source.list_users()
-    assert [u["user_id"] for u in users] == ["424242"]
+    assert [u["user_id"] for u in users] == ["120000", "424242"]
 
 
 # --------------------------------------------------------------------------
@@ -248,7 +259,19 @@ def plex_transport(rows, *, guid=None, html_error=False):
         if request.url.path.startswith("/library/metadata/"):
             return httpx.Response(
                 200,
-                json={"MediaContainer": {"Metadata": [{"Guid": guid, "year": 2026}]}},
+                json={
+                    "MediaContainer": {
+                        "Metadata": [
+                            {
+                                "Guid": guid,
+                                "year": 2026,
+                                "userRating": 9.0,
+                                "rating": 8.6,
+                                "audienceRating": 7.6,
+                            }
+                        ]
+                    }
+                },
             )
         return httpx.Response(404)
 
@@ -294,3 +317,107 @@ async def test_plex_paginates():
     source = PlexSource("http://localhost:32400", "token", client)
     async with client:
         assert len(await source.fetch_movie_history()) == 1100
+
+
+# --------------------------------------------------------------------------
+# Ratings and the attribution guard
+# --------------------------------------------------------------------------
+
+ADMIN_USER_ID = 120000
+OTHER_USER_ID = 424242
+
+
+def rating_source(rows, *, enabled=True, user_rating="10.0"):
+    client = httpx.AsyncClient(
+        transport=tautulli_app(rows, user_rating=user_rating)
+    )
+    source = TautulliSource(
+        "http://tautulli.test:8181",
+        "key",
+        client,
+        rating_policy=RatingPolicy(enabled, None),
+    )
+    return source, client
+
+
+async def test_ratings_are_omitted_when_disabled():
+    source, client = rating_source([tautulli_history_row()], enabled=False)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 is None
+
+
+async def test_admin_own_play_keeps_its_rating():
+    rows = [tautulli_history_row(user_id=ADMIN_USER_ID, user="owner")]
+    source, client = rating_source(rows)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 == 10
+
+
+async def test_another_users_play_does_not_inherit_the_admin_rating():
+    """The live APIs return the token owner's rating for every user.
+
+    Attaching it to a shared user would write the admin's opinion into that
+    person's public diary.
+    """
+    rows = [tautulli_history_row(user_id=OTHER_USER_ID, user="moviefan")]
+    source, client = rating_source(rows)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 is None
+
+
+async def test_mixed_user_export_rates_only_the_admin_rows():
+    rows = [
+        tautulli_history_row(row_id=1, user_id=ADMIN_USER_ID, user="owner"),
+        tautulli_history_row(row_id=2, user_id=OTHER_USER_ID, user="moviefan"),
+    ]
+    source, client = rating_source(rows)
+    async with client:
+        events = await source.fetch_movie_history()
+    by_user = {e.user_id: e.rating10 for e in events}
+    assert by_user[str(ADMIN_USER_ID)] == 10
+    assert by_user[str(OTHER_USER_ID)] is None
+
+
+async def test_unrated_film_yields_no_rating():
+    rows = [tautulli_history_row(user_id=ADMIN_USER_ID)]
+    source, client = rating_source(rows, user_rating="")
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 is None
+
+
+async def test_critic_and_audience_scores_are_never_used_as_a_rating():
+    """The fixture carries rating=8.6 and audience_rating=7.6."""
+    rows = [tautulli_history_row(user_id=ADMIN_USER_ID)]
+    source, client = rating_source(rows, user_rating=None)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 is None
+
+
+async def test_plex_oauth_style_policy_rates_every_row():
+    """In hosted mode the token belongs to the exporting user by construction."""
+    client = httpx.AsyncClient(transport=plex_transport([plex_history_row()]))
+    source = PlexSource(
+        "http://localhost:32400",
+        "token",
+        client,
+        rating_policy=RatingPolicy(True, None),
+    )
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].rating10 == 9
+
+
+async def test_plex_owner_scoped_policy_skips_shared_users():
+    rows = [plex_history_row(accountID=1), plex_history_row(accountID=424242)]
+    client = httpx.AsyncClient(transport=plex_transport(rows))
+    source = PlexSource(
+        "http://localhost:32400", "token", client, rating_policy=RatingPolicy(True, "1")
+    )
+    async with client:
+        events = await source.fetch_movie_history()
+    assert {e.user_id: e.rating10 for e in events} == {"1": 9, "424242": None}

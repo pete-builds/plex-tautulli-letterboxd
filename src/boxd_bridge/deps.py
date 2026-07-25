@@ -14,9 +14,13 @@ from boxd_bridge.config import AuthMode, Settings, SourceKind
 from boxd_bridge.sources.base import WatchSource
 from boxd_bridge.sources.plex import PlexSource
 from boxd_bridge.sources.tautulli import TautulliSource
+from boxd_bridge.transform.ratings import RatingPolicy
 
 SESSION_COOKIE = "bb_session"
 PIN_COOKIE = "bb_pin"
+
+# Plex numbers the server owner as account 1; shared users get their plex.tv id.
+PLEX_OWNER_ACCOUNT_ID = "1"
 
 
 def get_settings_dep(request: Request) -> Settings:
@@ -97,7 +101,16 @@ def build_source(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No Plex server selected for this session.",
             )
-        return PlexSource(uri, token, client, account_id=session.get("account_id"))
+        return PlexSource(
+            uri,
+            token,
+            client,
+            account_id=session.get("account_id"),
+            # The visitor authenticated as themselves, so the token that reads
+            # ratings belongs to the person being exported. owner_user_id=None
+            # means "trust every row".
+            rating_policy=RatingPolicy(settings.export_ratings, None),
+        )
 
     if settings.source_kind is SourceKind.TAUTULLI:
         return TautulliSource(
@@ -105,5 +118,16 @@ def build_source(
             settings.tautulli_apikey or "",
             client,
             completion_threshold=settings.completion_threshold,
+            # owner_user_id is discovered from Tautulli's admin user, so ratings
+            # attach only to the admin's own plays.
+            rating_policy=RatingPolicy(settings.export_ratings, None),
         )
-    return PlexSource(settings.plex_url or "", settings.plex_token or "", client)
+    return PlexSource(
+        settings.plex_url or "",
+        settings.plex_token or "",
+        client,
+        # Plex reports the server owner as accountID 1 (confirmed against
+        # /accounts on a live server). A shared user's rows therefore never
+        # inherit the owner's ratings.
+        rating_policy=RatingPolicy(settings.export_ratings, PLEX_OWNER_ACCOUNT_ID),
+    )
