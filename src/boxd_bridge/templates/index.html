@@ -46,15 +46,17 @@
     </label>
     {% endif %}
 
+    <!-- ONE control owns `since`. Each option's value IS the resolved date,
+         computed server-side in the export timezone, so the browser never does
+         date arithmetic and the control cannot display one window while sending
+         another. The date input appears only for "Custom date…". -->
     <div class="row">
       <label class="field">
         <span>Watched since</span>
         <select id="range">
-          <option value="all" selected>All time</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
-          <option value="custom">Specific date&hellip;</option>
+          {% for opt in since_options %}
+          <option value="{{ opt.value }}"{% if loop.first %} selected{% endif %}>{{ opt.label }}</option>
+          {% endfor %}
         </select>
       </label>
       <!-- The input is a SIBLING of its label, not a child. A <label> wrapping
@@ -62,10 +64,12 @@
            mobile Chrome, which reopens the picker and snaps the value back to
            today. Explicit `for=` keeps the association without the re-activation. -->
       <div class="field" id="since-field" hidden>
-        <label class="field-label" for="since">From</label>
+        <label class="field-label" for="since">Date</label>
         <input type="date" id="since" autocomplete="off">
       </div>
     </div>
+
+    <p class="resolved" id="resolved">Exporting your entire history.</p>
 
     <div class="actions">
       <button class="primary" id="preview-btn" type="button">Preview</button>

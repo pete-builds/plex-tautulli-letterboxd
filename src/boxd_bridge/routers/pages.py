@@ -2,10 +2,37 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
+
+# Preset windows, in days. Resolved server-side so the dates are computed in the
+# export's own timezone rather than the browser's, and so they are testable.
+PRESET_DAYS: tuple[tuple[str, int], ...] = (
+    ("Last 30 days", 30),
+    ("Last 90 days", 90),
+    ("Last year", 365),
+)
+
+CUSTOM_OPTION = "custom"
+
+
+def build_since_options(today) -> list[dict[str, str]]:
+    """Options whose *value is the resolved since date*.
+
+    The browser does no date arithmetic. Previously it did, which meant the
+    control could display one window while a different one went on the wire.
+    "Last year" is 365 days back, not the start of the calendar year.
+    """
+    options = [{"label": "All time", "value": ""}]
+    options += [
+        {"label": label, "value": (today - timedelta(days=days)).isoformat()}
+        for label, days in PRESET_DAYS
+    ]
+    options.append({"label": "Custom date…", "value": CUSTOM_OPTION})
+    return options
 
 from boxd_bridge.auth.session import SessionInvalid
 from boxd_bridge.config import AuthMode, Settings, SourceKind
@@ -42,6 +69,9 @@ async def index(
             "show_user_picker": (
                 settings.auth_mode is AuthMode.ENV
                 and settings.source_kind is SourceKind.TAUTULLI
+            ),
+            "since_options": build_since_options(
+                datetime.now(settings.tzinfo).date()
             ),
         },
     )
