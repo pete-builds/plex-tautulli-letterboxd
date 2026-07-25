@@ -19,10 +19,27 @@ and if approved you get an `api_key` and `api_secret` and sign your requests
 with HMAC. There is no public signup, and no way to build a tool that strangers
 can self-host against it.
 
-This is the wall every Plex-to-Letterboxd project hits, and it is why almost all
-of them on GitHub are abandoned. The ones that work at all require API
-credentials their users cannot obtain. Nothing in this repository changes that,
-and you should be suspicious of any project claiming otherwise.
+This is the wall every Plex-to-Letterboxd project hits. Nothing in this
+repository changes that, and you should be suspicious of any project claiming
+otherwise.
+
+Some tools hit the wall and stop there.
+[`tautulli-watched-sync`](https://github.com/JvSomeren/tautulli-watched-sync)
+needs an approved Letterboxd `api_key` and `api_secret`, which most people
+cannot obtain, and it has not been updated since 2020.
+
+Others take the same CSV route this project does, and they work.
+[`plex2letterboxd`](https://github.com/mtimkovich/plex2letterboxd) is the
+best-known one: it reads Plex directly and writes a Letterboxd CSV with title,
+year, IMDb id, rating and watched date. It is maintained and it does the job.
+**If that covers what you need, use it.**
+
+This project differs in four ways. It reads Tautulli as well as Plex, so it can
+export history for films no longer in your library. It sets `Rewatch` flags. It
+converts watch times to your timezone before truncating them to a calendar date,
+which otherwise puts late-night viewings on the wrong day. And it runs as a
+service with a `since` filter, so the import review screen stays short instead of
+growing with your history forever.
 
 ## Why not browser automation
 
