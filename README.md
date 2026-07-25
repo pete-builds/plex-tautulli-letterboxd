@@ -97,8 +97,11 @@ it to save twenty seconds of clicking.
 
 ## Ratings
 
-Off by default, enabled with `EXPORT_RATINGS=true`, because neither source can
-return a *specific* user's rating. Verified against live instances:
+Supported, and switched off by default rather than unfinished. Set
+`EXPORT_RATINGS=true` to add the `Rating10` column.
+
+The default is off because neither source can return a *specific* user's rating.
+Verified against live instances:
 
 - Tautulli's `get_metadata` ignores `user_id`. Same `user_rating` with no user,
   with `user_id=0`, and with an unrelated id.
