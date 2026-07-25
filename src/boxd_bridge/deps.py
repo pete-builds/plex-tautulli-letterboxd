@@ -106,6 +106,11 @@ def build_source(
             token,
             client,
             account_id=session.get("account_id"),
+            # The plex.tv id and this server's local account id are different
+            # numbers for a server owner, so the username is needed to resolve.
+            account_username=session.get("username"),
+            # Never run unscoped in hosted mode.
+            require_account_scope=True,
             # The visitor authenticated as themselves, so the token that reads
             # ratings belongs to the person being exported. owner_user_id=None
             # means "trust every row".

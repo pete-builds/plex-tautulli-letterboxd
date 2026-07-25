@@ -105,7 +105,7 @@ def tautulli_app(history_rows, *, metadata_guids=None, fail=False, user_rating=N
                         "result": "success",
                         "data": [
                             {"user_id": 0, "username": "Local", "is_active": 1},
-                            {"user_id": 120000, "username": "owner", "friendly_name": "owner", "is_active": 1, "is_admin": 1},
+                            {"user_id": 999100, "username": "owner", "friendly_name": "owner", "is_active": 1, "is_admin": 1},
                             {"user_id": 424242, "username": "moviefan", "friendly_name": "moviefan", "is_active": 1},
                             {"user_id": 5550726, "username": "Guests", "is_active": 0},
                         ],
@@ -214,7 +214,7 @@ async def test_tautulli_list_users_excludes_inactive_and_local():
     source, client = tautulli_source([])
     async with client:
         users = await source.list_users()
-    assert [u["user_id"] for u in users] == ["120000", "424242"]
+    assert [u["user_id"] for u in users] == ["999100", "424242"]
 
 
 # --------------------------------------------------------------------------
@@ -323,7 +323,7 @@ async def test_plex_paginates():
 # Ratings and the attribution guard
 # --------------------------------------------------------------------------
 
-ADMIN_USER_ID = 120000
+ADMIN_USER_ID = 999100
 OTHER_USER_ID = 424242
 
 

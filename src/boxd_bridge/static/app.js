@@ -16,6 +16,10 @@ function selectedUser() {
   return picker && picker.value ? picker.value : null;
 }
 
+// Remembers the date the user actually entered, so switching to a preset and
+// back does not silently discard it.
+let customSince = "";
+
 /** The active `since` value, or null for all time. */
 function selectedSince() {
   const range = $("range");
@@ -110,6 +114,16 @@ function renderPreview(data) {
 async function preview() {
   const btn = $("preview-btn");
   const out = $("result");
+
+  // "Specific date" with nothing entered used to fall through to an all-time
+  // export, which silently ignores what the control says.
+  if ($("range")?.value === "custom" && !selectedSince()) {
+    out.hidden = false;
+    out.innerHTML =
+      '<p class="note">Pick a date to export from, or choose a preset.</p>';
+    return;
+  }
+
   btn.disabled = true;
   out.hidden = false;
   out.textContent = "Reading watch history…";
@@ -126,20 +140,37 @@ async function preview() {
   }
 }
 
+function rememberCustomSince() {
+  const input = $("since");
+  if (input) customSince = input.value;
+  syncDownloadLink();
+}
+
 $("preview-btn")?.addEventListener("click", preview);
 $("user")?.addEventListener("change", syncDownloadLink);
-$("since")?.addEventListener("change", syncDownloadLink);
+// Both events: `input` fires as the value is committed on mobile, `change` on
+// desktop commit and on blur.
+$("since")?.addEventListener("input", rememberCustomSince);
+$("since")?.addEventListener("change", rememberCustomSince);
+
 $("range")?.addEventListener("change", (event) => {
-  $("since-field").hidden = event.target.value !== "custom";
+  const custom = event.target.value === "custom";
+  $("since-field").hidden = !custom;
+  // Restore the previously entered date rather than losing it on a round trip
+  // through a preset.
+  if (custom && customSince && $("since") && !$("since").value) {
+    $("since").value = customSince;
+  }
   syncDownloadLink();
 });
 
 // Honour a bookmarked ?since= so a saved incremental link opens pre-filled.
 const bookmarked = new URLSearchParams(window.location.search).get("since");
-if (bookmarked && $("range")) {
+if (bookmarked && $("range") && $("since")) {
   $("range").value = "custom";
   $("since-field").hidden = false;
   $("since").value = bookmarked;
+  customSince = bookmarked;
 }
 
 syncDownloadLink();

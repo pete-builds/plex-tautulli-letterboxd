@@ -57,8 +57,11 @@ async def _run_export(
     since: date | None = None,
 ):
     session = _session_for(request, settings)
-    # In hosted mode a visitor may only export their own history.
-    effective_user = session.get("account_id") if session else user_id
+    # In hosted mode the source resolves the caller's local account id itself and
+    # refuses to run unscoped, so no user filter is passed in from here. The
+    # plex.tv id is NOT usable as a history filter (a server owner is local
+    # account 1), which previously produced a silent empty export.
+    effective_user = None if session else user_id
     source = build_source(settings, client, session)
     try:
         return await build_export(

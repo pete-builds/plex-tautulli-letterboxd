@@ -51,12 +51,16 @@ class PlexSource:
         client: httpx.AsyncClient,
         *,
         account_id: str | None = None,
+        account_username: str | None = None,
+        require_account_scope: bool = False,
         rating_policy: RatingPolicy = DISABLED,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._client = client
         self._account_id = account_id
+        self._account_username = account_username
+        self._require_account_scope = require_account_scope
         self._rating_policy = rating_policy
         # ratingKey -> (external ids, year, the token owner's rating)
         self._metadata_cache: dict[str, tuple[ExternalIds, int | None, int | None]] = {}
@@ -106,6 +110,45 @@ class PlexSource:
         self._metadata_cache[rating_key] = result
         return result
 
+    async def _resolve_account_id(self) -> str | None:
+        """Map a plex.tv identity onto this server's LOCAL account id.
+
+        These are not the same number, which is the trap. Verified live:
+
+        * A **shared** user appears in ``/accounts`` under their plex.tv id, so
+          that id works directly as a history filter.
+        * The **server owner** is local account ``1``, while their plex.tv id is
+          something else entirely. Filtering history by the plex.tv id returns
+          zero rows and no error, which is exactly what a server owner would
+          hit on every single export.
+
+        So try an exact id match first, then fall back to matching the account
+        name against the plex.tv username.
+        """
+        wanted_id = str(self._account_id).strip() if self._account_id else ""
+        wanted_name = (self._account_username or "").strip().casefold()
+        if not wanted_id and not wanted_name:
+            return None
+
+        container = await self._get("/accounts")
+        accounts = [a for a in (container.get("Account") or []) if isinstance(a, dict)]
+
+        # 1. Shared user: plex.tv id is already this server's local id.
+        if wanted_id:
+            for account in accounts:
+                if str(account.get("id")) == wanted_id:
+                    return wanted_id
+
+        # 2. Server owner: different id, same name.
+        if wanted_name:
+            for account in accounts:
+                if str(account.get("name") or "").strip().casefold() == wanted_name:
+                    local_id = account.get("id")
+                    if local_id is not None:
+                        return str(local_id)
+
+        return None
+
     async def _fetch_rows(self, user_id: str | None) -> list[dict[str, Any]]:
         account_id = user_id or self._account_id
         rows: list[dict[str, Any]] = []
@@ -130,9 +173,34 @@ class PlexSource:
     async def fetch_movie_history(
         self, *, user_id: str | None = None
     ) -> list[WatchEvent]:
-        rows = await self._fetch_rows(user_id)
+        scope_id: str | None = None
+        if self._require_account_scope:
+            scope_id = await self._resolve_account_id()
+            if scope_id is None:
+                # Fail closed. Running unfiltered here would hand every user on
+                # the server their history, into someone's public diary.
+                raise SourceError(
+                    "Could not identify your account on this Plex server, so no "
+                    "history was exported."
+                )
+            rows = await self._fetch_rows(scope_id)
+        else:
+            rows = await self._fetch_rows(user_id)
+            if user_id:
+                scope_id = str(user_id)
+
         # Client-side filter: the server-side type filters are not trustworthy.
         candidates = [row for row in rows if row.get("type") == "movie"]
+
+        # Defence in depth. accountID *is* honoured today, but `type` is not, and
+        # trusting a server-side filter for an isolation boundary is how one
+        # user's history ends up in another user's export.
+        if scope_id is not None:
+            candidates = [
+                row
+                for row in candidates
+                if str(row.get("accountID")) == str(scope_id)
+            ]
 
         rating_keys = {
             str(row["ratingKey"]) for row in candidates if row.get("ratingKey")

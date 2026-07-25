@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>boxd-bridge</title>
+<title>plex-tautulli-letterboxd</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <main>
   <header>
-    <h1>boxd&#8203;-bridge</h1>
+    <h1>plex&#8203;-tautulli&#8203;-letterboxd</h1>
     <p class="sub">Plex watch history &rarr; a CSV Letterboxd will import.</p>
   </header>
 
@@ -57,10 +57,14 @@
           <option value="custom">Specific date&hellip;</option>
         </select>
       </label>
-      <label class="field" id="since-field" hidden>
-        <span>From</span>
-        <input type="date" id="since">
-      </label>
+      <!-- The input is a SIBLING of its label, not a child. A <label> wrapping
+           an <input type="date"> re-forwards the dismissing tap to the input on
+           mobile Chrome, which reopens the picker and snaps the value back to
+           today. Explicit `for=` keeps the association without the re-activation. -->
+      <div class="field" id="since-field" hidden>
+        <label class="field-label" for="since">From</label>
+        <input type="date" id="since" autocomplete="off">
+      </div>
     </div>
 
     <div class="actions">
