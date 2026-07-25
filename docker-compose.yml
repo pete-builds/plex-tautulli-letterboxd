@@ -1,0 +1,24 @@
+services:
+  boxd-bridge:
+    build: .
+    image: boxd-bridge:0.1.0
+    container_name: boxd-bridge
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8724:8000"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    # --- Talking to a Plex server on THIS host -----------------------------
+    # Plex's host-header allowlist returns an empty reply to requests arriving
+    # from off-host over plain LAN. If PLEX_URL points at a Plex running on this
+    # machine, drop the ports mapping above and use host networking instead:
+    #
+    # network_mode: host
+    #
+    # ...then set BIND_PORT=8724 in .env and PLEX_URL=http://localhost:32400.
+    # Not needed when the source is Tautulli, or when Plex is on another host.

@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+*.csv
+!tests/**/*.csv
+
+.DS_Store
+
+# Ops notes stay out of the public repo
+SESSION-RESUME.md
+docker-compose.override.yml

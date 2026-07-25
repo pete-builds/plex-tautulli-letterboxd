@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>boxd-bridge</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>boxd&#8203;-bridge</h1>
+    <p class="sub">Plex watch history &rarr; a CSV Letterboxd will import.</p>
+  </header>
+
+  {% if hosted and not signed_in %}
+  <section class="card">
+    <h2>Sign in with Plex</h2>
+    <p>You authenticate directly with Plex. Your token is held in an encrypted
+       session cookie in your browser and is never written to this server's disk.</p>
+    <form method="post" action="/auth/plex/start">
+      <button class="primary" type="submit">Sign in with Plex</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="card">
+    <h2>Export</h2>
+    <dl class="meta">
+      {% if hosted %}
+      <div><dt>Account</dt><dd>{{ username or "Plex user" }}</dd></div>
+      <div><dt>Server</dt><dd>{{ server_name or "-" }}</dd></div>
+      {% endif %}
+      <div><dt>Source</dt><dd>{{ source }}</dd></div>
+      <div><dt>Time zone</dt><dd>{{ timezone }}</dd></div>
+      {% if source == "tautulli" %}
+      <div><dt>Counts as watched</dt><dd>&ge; {{ threshold }}%</dd></div>
+      {% endif %}
+    </dl>
+
+    {% if show_user_picker %}
+    <label class="field">
+      <span>User</span>
+      <select id="user">
+        <option value="">All users</option>
+      </select>
+    </label>
+    {% endif %}
+
+    <div class="row">
+      <label class="field">
+        <span>Watched since</span>
+        <select id="range">
+          <option value="all" selected>All time</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last year</option>
+          <option value="custom">Specific date&hellip;</option>
+        </select>
+      </label>
+      <label class="field" id="since-field" hidden>
+        <span>From</span>
+        <input type="date" id="since">
+      </label>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="preview-btn" type="button">Preview</button>
+      <a class="button" id="download" href="/api/export.csv">Download CSV</a>
+      {% if hosted %}
+      <form method="post" action="/auth/logout"><button class="link" type="submit">Sign out</button></form>
+      {% endif %}
+    </div>
+
+    <div id="result" hidden></div>
+  </section>
+  {% endif %}
+
+  <section class="card muted">
+    <h2>Why there is no live scrobbling</h2>
+    <p>Letterboxd's write API is a request-only closed beta, so no self-hosted
+       tool can push entries to your diary as you watch. Their CSV importer is
+       idempotent: re-importing the same history updates matching diary entries
+       rather than duplicating them. This exports your whole history every time,
+       which is why there is no sync state to manage.</p>
+  </section>
+</main>
+<script src="/static/app.js" type="module"></script>
+</body>
+</html>
