@@ -1,6 +1,6 @@
 from boxd_bridge.transform.csv_export import CSV_COLUMNS, render_csv_parts
 from boxd_bridge.transform.filters import InvalidSinceDate, filter_since, parse_since
-from boxd_bridge.transform.rewatch import build_diary_rows, film_key
+from boxd_bridge.transform.rewatch import build_diary_rows, film_key, reconcile_ids
 
 __all__ = [
     "CSV_COLUMNS",
@@ -9,5 +9,6 @@ __all__ = [
     "filter_since",
     "film_key",
     "parse_since",
+    "reconcile_ids",
     "render_csv_parts",
 ]

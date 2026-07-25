@@ -5,7 +5,7 @@ Both sources hand us the same shape, just under different keys:
 * Tautulli ``get_metadata`` -> ``guids``: ``["imdb://tt1234567", "tmdb://12345", ...]``
 * Plex ``/library/metadata/<rk>`` -> ``Guid``: ``[{"id": "imdb://tt7654321"}, ...]``
 
-Both verified live against Pete's instances on 2026-07-25.
+Both verified live against real Tautulli and Plex instances on 2026-07-25.
 """
 
 from __future__ import annotations
