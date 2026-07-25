@@ -1,4 +1,4 @@
-# boxd-bridge
+# plex-tautulli-letterboxd
 
 Export Plex or Tautulli watch history to a CSV that Letterboxd imports.
 
@@ -17,8 +17,21 @@ maintained and it works. **If that covers you, use it.**
 needs approved Letterboxd API credentials most people can't get, and hasn't been
 updated since 2020.
 
-This one reads Tautulli as well as Plex, sets `Rewatch` flags, converts to your
-timezone before truncating the date, and runs as a service with a `since` filter.
+How this one differs (checked against `plex2letterboxd`'s source, not its
+README):
+
+| | `plex2letterboxd` | this |
+|---|---|---|
+| Source | Plex | Plex **or Tautulli** |
+| Id columns | `imdbID` | `tmdbID` and `imdbID` |
+| `Rewatch` flags | not emitted | yes, computed across full history |
+| Timezone | no conversion in the source | converts before truncating to a date |
+| Repeat exports | whole history every run | `since` filter |
+| Ratings | always on | opt-in, and only rows the token owner actually rated |
+| Form | run-once CLI | container with a web UI |
+
+Reading Tautulli is the one that matters most in practice. Tautulli keeps its own
+play records, so history survives after you delete a file from the library.
 
 ## How it works
 
@@ -104,8 +117,8 @@ means unrated and yields an empty cell, never a literal `0`.
 ## Quick start
 
 ```bash
-git clone https://github.com/pete-builds/boxd-bridge.git
-cd boxd-bridge
+git clone https://github.com/pete-builds/plex-tautulli-letterboxd.git
+cd plex-tautulli-letterboxd
 cp .env.example .env
 # set TAUTULLI_URL + TAUTULLI_APIKEY, or PLEX_URL + PLEX_TOKEN
 docker compose up -d --build
