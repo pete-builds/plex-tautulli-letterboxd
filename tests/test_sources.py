@@ -421,3 +421,56 @@ async def test_plex_owner_scoped_policy_skips_shared_users():
     async with client:
         events = await source.fetch_movie_history()
     assert {e.user_id: e.rating10 for e in events} == {"1": 9, "424242": None}
+
+
+# --------------------------------------------------------------------------
+# Year fallback (Plex history rows carry no `year`)
+# --------------------------------------------------------------------------
+
+
+async def test_plex_derives_year_from_release_date_when_metadata_is_gone():
+    """Deleted media has ratingKey=None, so metadata cannot supply a year.
+
+    An empty Year makes Letterboxd match on title alone, which imports the
+    wrong film for anything ambiguous.
+    """
+    row = plex_history_row(title="The Thing", ratingKey=None)
+    row.pop("year")
+    row["originallyAvailableAt"] = "1982-06-25"
+    client = httpx.AsyncClient(transport=plex_transport([row]))
+    source = PlexSource("http://localhost:32400", "token", client)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].year == 1982
+
+
+async def test_plex_prefers_metadata_year_over_the_release_date():
+    row = plex_history_row()
+    row.pop("year")
+    row["originallyAvailableAt"] = "1999-01-01"
+    client = httpx.AsyncClient(transport=plex_transport([row]))
+    source = PlexSource("http://localhost:32400", "token", client)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].year == 2026  # from /library/metadata
+
+
+async def test_plex_year_is_none_when_nothing_supplies_it():
+    row = plex_history_row(ratingKey=None)
+    row.pop("year")
+    client = httpx.AsyncClient(transport=plex_transport([row]))
+    source = PlexSource("http://localhost:32400", "token", client)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].year is None
+
+
+async def test_plex_ignores_a_malformed_release_date():
+    row = plex_history_row(ratingKey=None)
+    row.pop("year")
+    row["originallyAvailableAt"] = "not-a-date"
+    client = httpx.AsyncClient(transport=plex_transport([row]))
+    source = PlexSource("http://localhost:32400", "token", client)
+    async with client:
+        events = await source.fetch_movie_history()
+    assert events[0].year is None

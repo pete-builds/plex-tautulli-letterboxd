@@ -38,6 +38,21 @@ from boxd_bridge.models import WatchEvent
 from boxd_bridge.sources.base import SourceError
 from boxd_bridge.transform.ratings import DISABLED, RatingPolicy, normalize_rating10
 
+def _year_from_release_date(value: object) -> int | None:
+    """Plex history rows carry no `year`, but they do carry a release date.
+
+    Verified live: 0 of 54 movie history rows had a `year` field, while every
+    one had `originallyAvailableAt`. Rows for media deleted from the library
+    also have `ratingKey=None`, so the metadata lookup cannot supply a year
+    either. Without this fallback those rows export with an empty Year and
+    Letterboxd matches on title alone, which silently imports the wrong film for
+    an ambiguous title like "The Thing" (1951, 1982, 2011).
+    """
+    if isinstance(value, str) and len(value) >= 4 and value[:4].isdigit():
+        return int(value[:4])
+    return None
+
+
 _PAGE_SIZE = 500
 _MAX_PAGES = 200
 _METADATA_CONCURRENCY = 5
@@ -224,11 +239,15 @@ class PlexSource:
             )
             user_id = str(row["accountID"]) if row.get("accountID") else None
             year = row.get("year")
+            if not isinstance(year, int):
+                year = meta_year or _year_from_release_date(
+                    row.get("originallyAvailableAt")
+                )
             events.append(
                 WatchEvent(
                     watched_at_utc=datetime.fromtimestamp(int(viewed_at), tz=UTC),
                     title=str(title),
-                    year=year if isinstance(year, int) else meta_year,
+                    year=year,
                     tmdb_id=ids.tmdb_id,
                     imdb_id=ids.imdb_id,
                     user_id=user_id,

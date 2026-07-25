@@ -31,7 +31,7 @@ def build_since_options(today) -> list[dict[str, str]]:
         {"label": label, "value": (today - timedelta(days=days)).isoformat()}
         for label, days in PRESET_DAYS
     ]
-    options.append({"label": "Custom date…", "value": CUSTOM_OPTION})
+    options.append({"label": "Pick a specific date…", "value": CUSTOM_OPTION})
     return options
 
 from boxd_bridge.auth.session import SessionInvalid
