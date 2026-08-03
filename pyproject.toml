@@ -20,7 +20,7 @@ Homepage = "https://github.com/pete-builds/boxd-bridge"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.0,<9",
+    "pytest>=9.1.1,<10",
     "pytest-asyncio>=1.0.0,<2",
 ]
 
