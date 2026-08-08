@@ -1,6 +1,6 @@
 # Python is pinned to 3.14 in exactly four places and they must agree:
 # pyproject.toml (requires-python), uv.lock, .python-version, and here.
-FROM python:3.14.6-slim-bookworm AS builder
+FROM python:3.15.0b4-slim-bookworm AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /usr/local/bin/uv
 
@@ -18,7 +18,7 @@ COPY src/ ./src/
 RUN uv sync --locked --no-dev
 
 
-FROM python:3.14.6-slim-bookworm AS runtime
+FROM python:3.15.0b4-slim-bookworm AS runtime
 
 RUN groupadd --system --gid 10001 boxd \
     && useradd --system --uid 10001 --gid boxd --no-create-home boxd
