@@ -12,6 +12,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The Python version is pinned in four places that must agree (see the
+    # comment at the top of the Dockerfile). A minor or major bump of the base
+    # image breaks `uv sync --locked`, which resolves against `==3.14.*`, and
+    # Dependabot cannot update the other three places. Patch bumps within the
+    # series (3.14.6 -> 3.14.7) are safe and stay enabled; moving the series is
+    # a deliberate four-file change a human makes.
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
