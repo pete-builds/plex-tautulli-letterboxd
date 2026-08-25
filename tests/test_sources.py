@@ -421,3 +421,79 @@ async def test_plex_owner_scoped_policy_skips_shared_users():
     async with client:
         events = await source.fetch_movie_history()
     assert {e.user_id: e.rating10 for e in events} == {"1": 9, "424242": None}
+
+
+# --- the API key must not reach an error body -----------------------------
+#
+# Tautulli authenticates by query string, so the request URL carries the
+# operator's apikey. httpx.HTTPStatusError embeds that URL in str(exc), and the
+# old code raised SourceError(str(exc)) -- which FastAPI serialises straight
+# into the 502 response body. Reachable without authentication: AuthMode.ENV is
+# the default, Tautulli is preferred over Plex whenever configured, those
+# endpoints skip the session check in ENV mode, and the server binds all
+# interfaces.
+
+SECRET = "sk-tautulli-do-not-leak-0123456789"
+
+
+def _failing_tautulli(status: int) -> tuple[TautulliSource, httpx.AsyncClient]:
+    def handler(request):
+        return httpx.Response(status)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return TautulliSource("http://tautulli.test:8181", SECRET, client), client
+
+
+@pytest.mark.parametrize("status", [401, 404, 502])
+async def test_http_errors_do_not_echo_the_api_key(status):
+    """404 (wrong base path), 401 (fronting proxy), 502 (Tautulli restarting).
+
+    These are the reachable triggers. A wrong API KEY is not one of them:
+    Tautulli reports API-level failures as HTTP 200 with result "error", so the
+    most common misconfiguration routes through the non-leaking branch. The
+    original finding got that backwards, which is worth keeping straight -- but
+    the three above are enough.
+    """
+    source, client = _failing_tautulli(status)
+    async with client:
+        with pytest.raises(SourceError) as caught:
+            await source.fetch_movie_history()
+
+    message = str(caught.value)
+    assert SECRET not in message
+    assert "apikey" not in message
+    # Still diagnosable: the status is what an operator needs.
+    assert str(status) in message
+
+
+async def test_the_underlying_exception_really_did_carry_the_key():
+    """Guards the guard.
+
+    If httpx ever stops putting the URL in str(exc), the test above would pass
+    for the wrong reason and quietly stop protecting anything.
+    """
+    source, client = _failing_tautulli(500)
+    async with client:
+        with pytest.raises(SourceError) as caught:
+            await source.fetch_movie_history()
+
+    assert SECRET in str(caught.value.__cause__)
+
+
+async def test_transport_errors_are_normalised_through_the_same_helper():
+    """Connect failures carry no URL, so they never leaked.
+
+    They are routed through the redaction helper anyway, so no future exception
+    type re-opens the hole by taking a path that formats the raw exception.
+    """
+    def handler(request):
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    source = TautulliSource("http://tautulli.test:8181", SECRET, client)
+    async with client:
+        with pytest.raises(SourceError) as caught:
+            await source.fetch_movie_history()
+
+    assert SECRET not in str(caught.value)
+    assert "ConnectError" in str(caught.value)
