@@ -50,6 +50,23 @@ _MAX_PAGES = 200  # 100k plays; a guard against a misreported total looping fore
 _METADATA_CONCURRENCY = 5
 
 
+
+def _redact_http_error(exc: httpx.HTTPError, cmd: str) -> str:
+    """Describe an httpx failure without echoing the request URL.
+
+    The URL carries `apikey` as a query parameter, and str(exc) embeds it. Report
+    the method, the status and the command instead: enough to diagnose, nothing to
+    leak. Transport errors (connect refused, timeouts) carry no URL, but they are
+    normalised here too so no future exception type re-opens the hole.
+    """
+    status = None
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+    if status is not None:
+        return f"Tautulli {cmd} request failed with HTTP {status}"
+    return f"Tautulli {cmd} request failed: {type(exc).__name__}"
+
+
 class TautulliSource:
     def __init__(
         self,
@@ -77,14 +94,28 @@ class TautulliSource:
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as exc:
-            raise SourceError(f"Tautulli request failed: {exc}") from exc
+            # Do NOT interpolate `exc`. Tautulli authenticates by query string, so
+            # the API key is in the request URL, and httpx.HTTPStatusError's string
+            # form embeds that URL in full. That SourceError message is handed to
+            # HTTPException(detail=...) upstream, which FastAPI serialises straight
+            # into the 502 response body -- so any non-2xx from Tautulli returned
+            # the operator's API key to the caller.
+            #
+            # Reachable without authentication: AuthMode.ENV is the default, those
+            # endpoints skip the session check in that mode, the server binds all
+            # interfaces, and /api/users is fetched on page load. Triggering it only
+            # needs a wrong base path (404), a fronting proxy (401), or Tautulli
+            # restarting (502) -- not an attack.
+            raise SourceError(_redact_http_error(exc, cmd)) from exc
         except ValueError as exc:
             raise SourceError("Tautulli returned a non-JSON response") from exc
 
         envelope = payload.get("response") or {}
         if envelope.get("result") != "success":
-            # Never echo the message verbatim into user-facing errors upstream;
-            # it is fine here because this string stays server-side.
+            # This message comes from Tautulli's own JSON envelope, not from the
+            # request URL, so it carries no credential. It DOES reach the caller in
+            # a 502 body, though -- the old comment claiming it "stays server-side"
+            # was wrong about that, just harmlessly so.
             raise SourceError(
                 f"Tautulli {cmd} failed: {envelope.get('message') or 'unknown error'}"
             )
