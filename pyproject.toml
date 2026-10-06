@@ -7,7 +7,7 @@ license = { text = "MIT" }
 requires-python = "==3.14.*"
 dependencies = [
     "fastapi>=0.141.1,<0.143",
-    "uvicorn[standard]>=0.52.1,<0.54",
+    "uvicorn[standard]>=0.52.1,<0.55",
     "httpx>=0.28.1,<0.29",
     "pydantic>=2.12.0,<3",
     "pydantic-settings>=2.15.0,<3",
